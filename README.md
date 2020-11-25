@@ -1,5 +1,5 @@
 # wp-backup
-little program for backing up my wordpress site
+little program for backing up wordpress sites
 
 
 `npm install`
