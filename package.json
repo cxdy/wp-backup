@@ -1,0 +1,16 @@
+{
+  "name": "wp-backup",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "author": "Cody Kaczynski",
+  "license": "MIT",
+  "dependencies": {
+    "mysqldump": "^3.2.0",
+    "ssh2-sftp-client": "^5.3.2",
+    "tar": "^6.0.5"
+  }
+}
