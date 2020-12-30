@@ -4,8 +4,8 @@ little program for backing up wordpress sites
 
 `npm install`
 
-configure the `Database` and `ftp` objects
+configure the `Database` and `config` objects
 
-run as root
+run as root (ssh user should own the backups folder on the sftp server)
 
 profit
