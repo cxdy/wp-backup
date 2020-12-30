@@ -1,6 +1,6 @@
-let Client = require('ssh2-sftp-client');
-let sftp = new Client();
-const tar = require('tar');
+const path = require('path');
+let SftpClient = require('ssh2-sftp-client');
+var SSH = require('ssh2').Client;
 const mysqldump = require('mysqldump');
 const fs = require('fs');
 
@@ -18,21 +18,21 @@ const Database = {
     host: '',
     username: '',
     password: '',
-    database: ''
+    database: '',
+    dump: '/dbdump.sql'
 }
 
-const ftp = {
+const config = {
     host: '',
     username: '',
     password: '',
-    port: '',
-    localDir: '/path/to/wordpress',
-    remoteDir: '/path/to/backup',
-    fileName: "NAME - " + formattedTime
+    port: 22,
+    src: '/var/www/html',
+    dst: '/backups/' + formattedTime
 }
 
-function startBackup(callback) {
-    // Step 1 - MySQL
+async function main() {
+    const client = new SftpClient('upload');
     mysqldump({
         connection: {
             host: Database.host,
@@ -40,48 +40,49 @@ function startBackup(callback) {
             password: Database.password,
             database: Database.database,
         },
-        dumpToFile: '/tmp/' + ftp.fileName + '.sql',
+        dumpToFile: config.src + Database.dump,
     }).then((() => {
         console.log('SQL dumped, proceeding..');
     }))
-    // Step 2 - Create .tgz
-    tar.c(
-        {
-          gzip: true,
-          file: '/tmp/' + ftp.fileName + '.tgz'
-        },
-        [ftp.localDir, '/tmp/' + ftp.fileName + '.sql']
-      ).then(_ => { 
-          console.log(ftp.fileName + ' has been created!')
-          callback() 
-        })
+
+    try {
+        await client.connect(config);
+        client.on('upload', info => {
+            console.log(`Uploaded ${info.source}`);
+        });
+        let rslt = await client.uploadDir(config.src, config.dst);
+        return rslt;
+    } finally {
+        client.end();
+    }
 }
 
-function uploadBackup() {
-    sftp.connect({
-        host: ftp.host,
-        port: ftp.port,
-        username: ftp.username,
-        password: ftp.password,
-    }).then(() => {
-        return sftp.put('/tmp/' + ftp.fileName + '.tgz', ftp.remoteDir + ftp.fileName + '.tgz', { autoClose: true });
-      })
-      .then(() => {
-        console.log('File uploaded');
-        fs.unlink('/tmp/' + ftp.fileName + '.tgz', (err) => {
+main()
+    .then(msg => {
+        console.log(msg);
+        console.log('Deleting SQL file from webroot..');
+        fs.unlink(config.src + Database.dump, (err) => {
             if (err) throw err;
-            console.log(ftp.fileName + '.tgz' + ' has been uploaded to the server and deleted locally');
+            console.log(config.src + Database.dump + ' has been deleted locally.')
         })
-        fs.unlink('/tmp/' + ftp.fileName + '.sql', (err) => {
-            if (err) throw err;
-            console.log(ftp.fileName + '.sql' + ' has been deleted locally.')
-        })
-        return sftp.end();
-      })
-      .catch(err => {
-        console.error(err.message);
-      });
-}
-
-
-startBackup(uploadBackup);
+        console.log('Connecting to SSH Server..');
+        var conn = new SSH();
+        conn.on('ready', function () {
+            console.log('Connected to SSH server..');
+            console.log('Compressing backup file..')
+            conn.exec('cd /backups && tar -cf ' + config.dst + '.tar.gz ' + config.dst + ' && rm -rf ' + config.dst, function (err, stream) {
+                if (err) throw err;
+                stream.on('close', function (code, signal) {
+                    console.log('Stream :: close :: code: ' + code + ', signal: ' + signal);
+                    conn.end();
+                }).on('data', function (data) {
+                    console.log('STDOUT: ' + data);
+                }).stderr.on('data', function (data) {
+                    console.log('STDERR: ' + data);
+                });
+            });
+        }).connect(config);
+    })
+    .catch(err => {
+        console.log(`main error: ${err.message}`);
+    });
